@@ -3,217 +3,393 @@
 ## Core: Problem, Solution, Data, Weekly Design, Impact
 
 ### Problem We Solved
-Tricura insures skilled nursing facilities and is exposed to resident-incident claims (falls, medication errors, wounds, return-to-hospital events, elopement, altercations).
 
-The business challenge is not only to predict claims, but to reduce expected claims cost through earlier intervention, without relying on premium increases.
+Tricura insures skilled nursing facilities and is exposed to
+resident‑incident claims such as:
 
-### Our Solution (High Level)
-We framed the work as a **weekly resident-level risk pipeline** with two ML stages:
+-   Falls
+-   Medication errors
+-   Wounds / pressure injuries
+-   Return‑to‑hospital events
+-   Elopement / wandering
+-   Altercations
 
-1. **Will this resident have a claim next week?** (binary classification)
-2. **If yes, what is the most likely claim type next week?** (multiclass classification)
+The business challenge is **not only predicting claims**, but **reducing
+expected claim costs through early intervention**, without relying on
+premium increases.
 
-This gives both:
-- a probability signal (`p_claim_pred`) for triage/intervention prioritization
-- a likely incident-type signal (`y_type_pred`) to tailor intervention actions
+------------------------------------------------------------------------
 
-### Our Solution (Core Equations)
-For each resident-week record $i$, with features $x_i$:
+# Our Solution
 
-1. **Claim occurrence model (binary)**
-- Target: $y_i^{claim} \in \{0,1\}$, where 1 means at least one claim next week.
-- Predicted probability:
-  ```math
-  p_i = P(y_i^{claim}=1 \mid x_i)
-  ```
-- Decision rule with threshold $\tau$:
-  ```math
-  \hat{y}_i^{claim} = \mathbb{1}[p_i \ge \tau]
-  ```
-- $\tau$ is tuned on validation data to maximize F1.
+We frame the problem as a **weekly resident‑level risk prediction
+pipeline** with two machine‑learning stages.
 
-2. **Claim type model (multiclass, conditional)**
-- Classes $k \in \mathcal{K}$ (incident types).
-- Conditional probabilities:
-  ```math
-  q_{i,k} = P(y_i^{type}=k \mid x_i,\ y_i^{claim}=1)
-  ```
-- Type prediction for cases flagged as claim:
-  ```math
-  \hat{y}_i^{type} = \arg\max_{k \in \mathcal{K}} q_{i,k}
-  ```
-- For $\hat{y}_i^{claim}=0$, output `"NoClaim"`.
+### Stage 1 --- Claim Occurrence Prediction
 
-### Data We Considered
-Primary tables used in feature engineering:
-- `residents.parquet`
-- `vitals.parquet`
-- `incidents.parquet`
-- `injuries.parquet`
-- `hospital_admissions.parquet`
-- `hospital_transfers.parquet`
+Predict whether a resident will generate **any claim next week**.
+
+### Stage 2 --- Claim Type Prediction
+
+If a claim is predicted, estimate the **most likely claim type**.
+
+This produces two operational signals:
+
+-   `p_claim_pred`: probability of a claim next week
+-   `y_type_pred`: predicted claim type
+
+These signals support:
+
+-   **triage / prioritization**
+-   **type‑specific interventions**
+
+------------------------------------------------------------------------
+
+# Core Modeling Equations
+
+For each resident‑week observation ( i ) with features ( x_i ):
+
+------------------------------------------------------------------------
+
+## 1. Claim Occurrence Model (Binary)
+
+Target variable
+
+$$
+y_i^{\text{claim}} \in \{0,1\}
+$$
+
+where (1) indicates that at least one claim occurs in the following
+week.
+
+Predicted probability
+
+$$
+p_i = P(y_i^{\text{claim}} = 1 \mid x_i)
+$$
+
+Decision rule with threshold ( `\tau `{=tex})
+
+$$
+\hat{y}_i^{\text{claim}} =
+\begin{cases}
+1 & \text{if } p_i \ge \tau \\
+0 & \text{otherwise}
+\end{cases}
+$$
+
+The threshold ( `\tau `{=tex}) is tuned on validation data to maximize
+**F1 score**.
+
+------------------------------------------------------------------------
+
+## 2. Claim Type Model (Multiclass Conditional Model)
+
+Let the set of claim types be
+
+$$
+k \in \mathcal{K}
+$$
+
+Conditional probabilities are estimated as
+
+$$
+q_{i,k} =
+P(y_i^{\text{type}} = k \mid x_i, y_i^{\text{claim}} = 1)
+$$
+
+Type prediction for rows flagged as claims
+
+$$
+\hat{y}_i^{\text{type}} =
+\underset{k \in \mathcal{K}}{\arg\max} \; q_{i,k}
+$$
+
+If
+
+$$
+\hat{y}_i^{\text{claim}} = 0
+$$
+
+the output type is `"NoClaim"`.
+
+------------------------------------------------------------------------
+
+# Data Sources
+
+Feature engineering uses the following tables:
+
+-   `residents.parquet`
+-   `vitals.parquet`
+-   `incidents.parquet`
+-   `injuries.parquet`
+-   `hospital_admissions.parquet`
+-   `hospital_transfers.parquet`
 
 Conceptually:
-- Residents define enrollment windows and demographics (e.g., age proxy over time).
-- Vitals provide physiological trends/statistics.
-- Incidents and linked clinical context (injuries/admissions/transfers) define claim behavior.
 
-### Weekly Aggregation (Core Design Choice)
-We modeled everything on **resident-week granularity**:
-- Build one row per resident per week (`week_start`, `week_end`) during active stay windows.
-- Aggregate vitals into weekly summary stats (means/stds where applicable).
-- Aggregate incidents and related outcomes into weekly claim-context columns.
+-   **Residents** define stay windows and demographics
+-   **Vitals** provide physiological trends
+-   **Incidents and clinical outcomes** define claim behavior
 
-Then create labels as **next-week targets**:
-- `target_claim_next_week`: whether next week has any claim
-- `target_claim_type_next_week`: primary incident type next week
+------------------------------------------------------------------------
 
-Important leakage control:
-- Current-week incident outcome fields (claim counts, incident type fields, injury/admission/transfer indicators) are dropped before training so the model predicts forward, not “reads the answer” from current-week outcomes.
+# Weekly Aggregation Design
 
-### How We Measured Impact
-We measured impact at two levels:
+All modeling occurs at **resident‑week granularity**.
 
-1. **Model quality metrics** (ML-level)
-- Binary claim model: ROC-AUC, PR-AUC, threshold-tuned F1 behavior
-- Claim type model: accuracy, macro F1, balanced accuracy, log-loss
+We construct one row per:
 
-2. **Business simulation metrics** (decision-level)
-- Compare strategy outputs in cost terms (best strategy vs baseline vs do-nothing)
-- Evaluate mitigated claim rows, strategy cost, baseline cost, and savings ratio
+    resident × week
 
-This is the key idea: success is not only classification performance, but whether model-driven actions improve expected cost outcomes versus baseline operational behavior.
+during the resident's active stay.
 
-### Business Impact Method (Detailed)
-We evaluate policies as **decision strategies** over resident-weeks, not just classifiers.
+### Weekly feature construction
 
-#### 1. Per-row business quantities
-For each row $i$:
-- $c_i$: realized claim cost (0 if no claim)
-- $a_{i,s} \in \{0,1\}$: whether strategy $s$ triggers intervention for row $i$
-- $m_{i,s} \in [0,1]$: assumed mitigation effectiveness for that intervention under strategy $s$
-- $k_{i,s} \ge 0$: intervention/operational cost for acting on row $i$
+-   Aggregate vitals into weekly statistics
+-   Aggregate incident signals
+-   Create contextual indicators for injury, admission, transfer
 
-Mitigated claim cost under strategy $s$:
-```math
-\tilde{c}_{i,s} = c_i \cdot (1 - a_{i,s} \cdot m_{i,s})
-```
+### Forward targets
 
-Total per-row strategy cost:
-```math
-t_{i,s} = \tilde{c}_{i,s} + a_{i,s}\cdot k_{i,s}
-```
+Labels are defined for the **next week**:
 
-#### 2. Aggregate by strategy and split
-For each strategy $s$, we aggregate:
-```math
-\text{BaselineDoNothingCost}_s = \sum_i c_i
-```
-```math
-\text{StrategyCost}_s = \sum_i t_{i,s}
-```
-```math
-\text{Savings}_s = \text{BaselineDoNothingCost}_s - \text{StrategyCost}_s
-```
-```math
-\text{SavingsRate}_s = \frac{\text{Savings}_s}{\text{BaselineDoNothingCost}_s}
-```
+-   `target_claim_next_week`
+-   `target_claim_type_next_week`
 
-Operational activity indicators:
-- `intervened_rows`: $\sum_i a_{i,s}$
-- `mitigated_claim_rows`: rows where intervention applies and claim impact is reduced
+### Leakage prevention
 
-#### 3. Model-to-decision link
-- `p_claim_pred` controls prioritization (who gets intervention first / above threshold).
-- `y_type_pred` enables type-specific interventions/cost assumptions (e.g., different playbooks by incident type).
-- Different strategy definitions correspond to different thresholds/ranking/assignment rules.
+Current‑week outcome signals are removed before training, including:
 
-#### 4. Selection protocol
-- Compute strategy costs on **validation** predictions.
-- Rank strategies by minimum `strategy_cost` (or maximum savings).
-- Select:
-  - `best` = lowest validation strategy cost
-  - `baseline` = next-best operational comparator
-  - plus explicit `do_nothing`
-- Report all three on validation and test summaries.
+-   incident type fields
+-   claim counts
+-   injury / admission / transfer outcomes
 
-#### 5. Why this is the business metric
-A model with better ROC-AUC can still be worse operationally if it over-triggers expensive interventions or misses high-cost events.  
-Therefore, final acceptance is based on total-cost outcomes (`strategy_cost`, `savings_vs_do_nothing`, `savings_rate`), with ML metrics used as supporting diagnostics.
+This ensures the model predicts **forward risk**, not current outcomes.
 
-### Outputs
-Main prototype artifacts (saved to `data/`):
-- `weekly_model_dataset.parquet`
-- `val_claim_predictions.parquet`, `test_claim_predictions.parquet`
-- `val_claim_type_predictions.parquet`, `test_claim_type_predictions.parquet`
-- `val_business_predictions.parquet`, `test_business_predictions.parquet` (if exported)
-- `metrics_claim.parquet`, `metrics_claim_type.parquet`
-- `business_validation_summary_3_approaches.parquet`
+------------------------------------------------------------------------
 
-### Core Ideas to Keep
-- Weekly resident-level framing enables operational planning cadence.
-- Two-stage modeling supports both *who to prioritize* and *what kind of prevention to apply*.
-- Leakage-aware feature design is essential for realistic forward prediction.
-- Business-value validation is required; pure ML metrics are insufficient.
+# Business Impact Evaluation
 
----
+Model performance is evaluated at two levels.
 
-## Setup and Notebook-First Run
+------------------------------------------------------------------------
 
-### Environment
-Use Python 3.8 and a virtual environment.
+## 1. ML Metrics
 
-```bash
-python3.8 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-```
+Claim occurrence model:
 
-### Data and Artifacts Folder Convention
-- Raw source data: `data/`
-- Prototype notebook outputs/artifacts: `data/`
+-   ROC‑AUC
+-   PR‑AUC
+-   F1
 
-Prototype notebooks currently read/write directly in `data/`.
-If you do not have the dataset locally, follow the instructions in [`data/README.md`](./data/README.md) to download and place the parquet files.
+Claim type model:
 
-### Run Flow (Notebooks)
-Open notebooks in `prototype/` and execute in this order:
+-   Accuracy
+-   Macro F1
+-   Balanced accuracy
+-   Log‑loss
 
-1. `prototype/feature_engineering.ipynb`
-- Builds weekly feature store dataset
-- Produces `data/weekly_model_dataset.parquet`
+------------------------------------------------------------------------
 
-2. `prototype/feature_store_eda.ipynb` (optional but recommended)
-- Validates/inspects weekly dataset behavior
+## 2. Operational Cost Simulation
 
-3. `prototype/weekly_claims_ml.ipynb`
-- Trains/evaluates claim and claim-type models
-- Exports prediction and metrics parquet artifacts
+Strategies are evaluated as **decision policies over resident‑weeks**.
 
-4. `prototype/business_validation.ipynb`
-- Computes strategy-level cost impact
-- Produces business validation summary output
+------------------------------------------------------------------------
 
----
+# Cost Framework
 
-## Work In Progress: `src/` Package + MLflow Track
+For each observation ( i ) and strategy ( s ):
 
-This repository is actively migrating from notebook-first experimentation to a script/package pipeline under `src/`.
+  Symbol       Meaning
+  ------------ --------------------------
+  (c_i)        realized claim cost
+  (a\_{i,s})   intervention triggered
+  (m\_{i,s})   mitigation effectiveness
+  (k\_{i,s})   intervention cost
 
-Current WIP components:
-- `src/insurance_ml/feature_store.py`
-  - Reproducible weekly feature-store generation
-- `src/insurance_ml/training.py`
-  - Train binary + multiclass models
-  - Feature handling and threshold selection
-  - MLflow logging of params/metrics/artifacts/models
-- `src/insurance_ml/inference.py`
-  - Bundle-based batch inference output
-- `src/scripts/`
-  - `build_feature_store.py`
-  - `train_models.py`
-  - `predict.py`
+------------------------------------------------------------------------
 
-MLflow is already integrated in training code and documented in `docs/CI_PROCESS.md` for local tracking/server workflows.
+## Mitigated Claim Cost
 
-This `src` track is intended to become the production-grade path (CI/CD-friendly, reproducible, and less notebook-dependent) while notebook artifacts remain useful for exploration and business communication.
+$$
+\tilde{c}_{i,s} =
+c_i \cdot (1 - a_{i,s} \cdot m_{i,s})
+$$
+
+------------------------------------------------------------------------
+
+## Total Row Cost
+
+$$
+t_{i,s} =
+\tilde{c}_{i,s} + a_{i,s} \cdot k_{i,s}
+$$
+
+------------------------------------------------------------------------
+
+# Strategy Aggregation
+
+Baseline (no intervention)
+
+$$
+\text{BaselineCost}_s =
+\sum_i c_i
+$$
+
+Strategy cost
+
+$$
+\text{StrategyCost}_s =
+\sum_i t_{i,s}
+$$
+
+Savings
+
+$$
+\text{Savings}_s =
+\text{BaselineCost}_s - \text{StrategyCost}_s
+$$
+
+Savings rate
+
+$$
+\text{SavingsRate}_s =
+\frac{\text{Savings}_s}{\text{BaselineCost}_s}
+$$
+
+Operational indicators
+
+-   `intervened_rows = Σ a_{i,s}`
+-   `mitigated_claim_rows`
+
+------------------------------------------------------------------------
+
+# Model → Decision Link
+
+The ML predictions drive operational policies.
+
+  Prediction       Operational Role
+  ---------------- ----------------------------
+  `p_claim_pred`   prioritization signal
+  `y_type_pred`    type‑specific intervention
+
+Different **decision strategies** correspond to:
+
+-   thresholds
+-   ranking rules
+-   intervention policies
+
+------------------------------------------------------------------------
+
+# Strategy Selection
+
+Strategies are evaluated on **validation predictions**.
+
+Selection rule:
+
+1.  Rank strategies by minimum total cost
+2.  Choose
+
+-   **best strategy**
+-   **baseline comparator**
+-   **do‑nothing policy**
+
+All strategies are reported on:
+
+-   validation
+-   test data
+
+------------------------------------------------------------------------
+
+# Why This Metric Matters
+
+A model with higher ROC‑AUC can still perform worse operationally if:
+
+-   it triggers too many expensive interventions
+-   it misses high‑severity claims
+
+Therefore the **primary evaluation metric is total operational cost**,
+not only ML metrics.
+
+------------------------------------------------------------------------
+
+# Prototype Outputs
+
+Saved artifacts include:
+
+-   `weekly_model_dataset.parquet`
+-   `val_claim_predictions.parquet`
+-   `test_claim_predictions.parquet`
+-   `val_claim_type_predictions.parquet`
+-   `test_claim_type_predictions.parquet`
+-   `metrics_claim.parquet`
+-   `metrics_claim_type.parquet`
+-   `business_validation_summary_3_approaches.parquet`
+
+------------------------------------------------------------------------
+
+# Key Ideas
+
+-   Weekly resident‑level modeling supports operational planning.
+-   Two‑stage prediction enables **who to prioritize** and **what
+    intervention to apply**.
+-   Leakage‑safe feature engineering is essential.
+-   Business value must be evaluated through **cost simulation**, not
+    only predictive metrics.
+
+------------------------------------------------------------------------
+
+# Notebook Workflow
+
+Run notebooks in the following order.
+
+### 1 --- Feature Engineering
+
+    prototype/feature_engineering.ipynb
+
+Produces
+
+    data/weekly_model_dataset.parquet
+
+### 2 --- Dataset Exploration (optional)
+
+    prototype/feature_store_eda.ipynb
+
+### 3 --- Model Training
+
+    prototype/weekly_claims_ml.ipynb
+
+Outputs predictions and metrics.
+
+### 4 --- Business Validation
+
+    prototype/business_validation.ipynb
+
+Computes operational cost impact.
+
+------------------------------------------------------------------------
+
+# Production Track (Work in Progress)
+
+The repository is transitioning toward a reproducible pipeline under:
+
+    src/
+
+Components include:
+
+-   `feature_store.py`
+-   `training.py`
+-   `inference.py`
+
+Scripts:
+
+-   `build_feature_store.py`
+-   `train_models.py`
+-   `predict.py`
+
+
+This structure supports **CI/CD pipelines and reproducible training**,
+while notebooks remain useful for exploration and business
+communication.
