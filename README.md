@@ -23,25 +23,25 @@ For each resident-week record $i$, with features $x_i$:
 1. **Claim occurrence model (binary)**
 - Target: $y_i^{claim} \in \{0,1\}$, where 1 means at least one claim next week.
 - Predicted probability:
-$$
-p_i = P(y_i^{claim}=1 \mid x_i)
-$$
+  ```math
+  p_i = P(y_i^{claim}=1 \mid x_i)
+  ```
 - Decision rule with threshold $\tau$:
-$$
-\hat{y}_i^{claim} = \mathbb{1}[p_i \ge \tau]
-$$
+  ```math
+  \hat{y}_i^{claim} = \mathbb{1}[p_i \ge \tau]
+  ```
 - $\tau$ is tuned on validation data to maximize F1.
 
 2. **Claim type model (multiclass, conditional)**
 - Classes $k \in \mathcal{K}$ (incident types).
 - Conditional probabilities:
-$$
-q_{i,k} = P(y_i^{type}=k \mid x_i,\ y_i^{claim}=1)
-$$
+  ```math
+  q_{i,k} = P(y_i^{type}=k \mid x_i,\ y_i^{claim}=1)
+  ```
 - Type prediction for cases flagged as claim:
-$$
-\hat{y}_i^{type} = \arg\max_{k \in \mathcal{K}} q_{i,k}
-$$
+  ```math
+  \hat{y}_i^{type} = \arg\max_{k \in \mathcal{K}} q_{i,k}
+  ```
 - For $\hat{y}_i^{claim}=0$, output `"NoClaim"`.
 
 ### Data We Considered
@@ -95,29 +95,29 @@ For each row $i$:
 - $k_{i,s} \ge 0$: intervention/operational cost for acting on row $i$
 
 Mitigated claim cost under strategy $s$:
-$$
+```math
 \tilde{c}_{i,s} = c_i \cdot (1 - a_{i,s} \cdot m_{i,s})
-$$
+```
 
 Total per-row strategy cost:
-$$
+```math
 t_{i,s} = \tilde{c}_{i,s} + a_{i,s}\cdot k_{i,s}
-$$
+```
 
 #### 2. Aggregate by strategy and split
 For each strategy $s$, we aggregate:
-$$
+```math
 \text{BaselineDoNothingCost}_s = \sum_i c_i
-$$
-$$
+```
+```math
 \text{StrategyCost}_s = \sum_i t_{i,s}
-$$
-$$
+```
+```math
 \text{Savings}_s = \text{BaselineDoNothingCost}_s - \text{StrategyCost}_s
-$$
-$$
+```
+```math
 \text{SavingsRate}_s = \frac{\text{Savings}_s}{\text{BaselineDoNothingCost}_s}
-$$
+```
 
 Operational activity indicators:
 - `intervened_rows`: $\sum_i a_{i,s}$
