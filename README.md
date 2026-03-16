@@ -18,31 +18,31 @@ This gives both:
 - a likely incident-type signal (`y_type_pred`) to tailor intervention actions
 
 ### Our Solution (Core Equations)
-For each resident-week record \(i\), with features \(x_i\):
+For each resident-week record $i$, with features $x_i$:
 
 1. **Claim occurrence model (binary)**
-- Target: \(y_i^{claim} \in \{0,1\}\), where 1 means at least one claim next week.
+- Target: $y_i^{claim} \in \{0,1\}$, where 1 means at least one claim next week.
 - Predicted probability:
-\[
+$$
 p_i = P(y_i^{claim}=1 \mid x_i)
-\]
-- Decision rule with threshold \(\tau\):
-\[
+$$
+- Decision rule with threshold $\tau$:
+$$
 \hat{y}_i^{claim} = \mathbb{1}[p_i \ge \tau]
-\]
-- \(\tau\) is tuned on validation data to maximize F1.
+$$
+- $\tau$ is tuned on validation data to maximize F1.
 
 2. **Claim type model (multiclass, conditional)**
-- Classes \(k \in \mathcal{K}\) (incident types).
+- Classes $k \in \mathcal{K}$ (incident types).
 - Conditional probabilities:
-\[
+$$
 q_{i,k} = P(y_i^{type}=k \mid x_i,\ y_i^{claim}=1)
-\]
+$$
 - Type prediction for cases flagged as claim:
-\[
+$$
 \hat{y}_i^{type} = \arg\max_{k \in \mathcal{K}} q_{i,k}
-\]
-- For \(\hat{y}_i^{claim}=0\), output `"NoClaim"`.
+$$
+- For $\hat{y}_i^{claim}=0$, output `"NoClaim"`.
 
 ### Data We Considered
 Primary tables used in feature engineering:
@@ -88,39 +88,39 @@ This is the key idea: success is not only classification performance, but whethe
 We evaluate policies as **decision strategies** over resident-weeks, not just classifiers.
 
 #### 1. Per-row business quantities
-For each row \(i\):
-- \(c_i\): realized claim cost (0 if no claim)
-- \(a_{i,s} \in \{0,1\}\): whether strategy \(s\) triggers intervention for row \(i\)
-- \(m_{i,s} \in [0,1]\): assumed mitigation effectiveness for that intervention under strategy \(s\)
-- \(k_{i,s} \ge 0\): intervention/operational cost for acting on row \(i\)
+For each row $i$:
+- $c_i$: realized claim cost (0 if no claim)
+- $a_{i,s} \in \{0,1\}$: whether strategy $s$ triggers intervention for row $i$
+- $m_{i,s} \in [0,1]$: assumed mitigation effectiveness for that intervention under strategy $s$
+- $k_{i,s} \ge 0$: intervention/operational cost for acting on row $i$
 
-Mitigated claim cost under strategy \(s\):
-\[
+Mitigated claim cost under strategy $s$:
+$$
 \tilde{c}_{i,s} = c_i \cdot (1 - a_{i,s} \cdot m_{i,s})
-\]
+$$
 
 Total per-row strategy cost:
-\[
+$$
 t_{i,s} = \tilde{c}_{i,s} + a_{i,s}\cdot k_{i,s}
-\]
+$$
 
 #### 2. Aggregate by strategy and split
-For each strategy \(s\), we aggregate:
-\[
+For each strategy $s$, we aggregate:
+$$
 \text{BaselineDoNothingCost}_s = \sum_i c_i
-\]
-\[
+$$
+$$
 \text{StrategyCost}_s = \sum_i t_{i,s}
-\]
-\[
+$$
+$$
 \text{Savings}_s = \text{BaselineDoNothingCost}_s - \text{StrategyCost}_s
-\]
-\[
+$$
+$$
 \text{SavingsRate}_s = \frac{\text{Savings}_s}{\text{BaselineDoNothingCost}_s}
-\]
+$$
 
 Operational activity indicators:
-- `intervened_rows`: \(\sum_i a_{i,s}\)
+- `intervened_rows`: $\sum_i a_{i,s}$
 - `mitigated_claim_rows`: rows where intervention applies and claim impact is reduced
 
 #### 3. Model-to-decision link
